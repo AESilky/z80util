@@ -5,17 +5,59 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "(lldb) Launch",
+            "name": "Test (no opts)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/src/main",
+            "program": "${workspaceFolder}/build/test/z80datest",
             "args": [],
-            "stopAtEntry": false,
+            "stopAtEntry": true,
             "cwd": "${fileDirname}",
             "environment": [],
             "externalConsole": false,
             "MIMode": "lldb"
+        },
+        {
+            "name": "Test 1C D",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/test/z80datest",
+            "args": [
+                "1C",
+                "D"
+            ],
+            "stopAtEntry": true,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb"
+        },
+        {
+            "name": "Test (prompt)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/test/z80datest",
+            "stopAtEntry": true,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            // Leave this empty so VS Code doesn't interfere
+            "args": [],
+            "setupCommands": [
+                {
+                    "description": "Inject raw space-separated arguments directly into LLDB",
+                    "text": "settings set target.run-args ${input:commandLineArgs}",
+                    "ignoreFailures": false
+                }
+            ]
         }
-
+    ],
+    "inputs": [
+        {
+            "id": "commandLineArgs",
+            "type": "promptString",
+            "description": "Enter space separated arguments:",
+            "default": ""
+        }
     ]
 }
