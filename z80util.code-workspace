@@ -8,8 +8,11 @@
         "cSpell.words": [
             "datest",
             "disasm",
+            "dispbyte",
+            "hlixiy",
             "rlca",
             "rrca"
-        ]
+        ],
+        "cmake.buildTask": true
     }
 }

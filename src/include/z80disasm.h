@@ -92,8 +92,8 @@ typedef struct zda_ctx_ {
     int8_t status;                  // The status (same as returned)
     zda_need_t need;                // The type of data needed
     df_t df;                        // (internal use)
-    char inst[Z80INST_BUF_LEN];     // Text of the disassembled instruction
-    char comment[Z80CMNT_BUF_LEN];  // Comment for the disassembled instruction
+    char stmt[Z80INST_BUF_LEN];     // The disassembled statement text
+    char comment[Z80CMNT_BUF_LEN];  // Comment for the disassembled statement
 } zda_ctx_t;
 
 /**

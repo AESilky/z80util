@@ -15,9 +15,21 @@
 #include <stdlib.h>
 #include <string.h>
 
+/** Constant String (char*) type */
+typedef const char* cstr;
+
+/**
+ * @brief Make 16-bit WORD value from high and low 8-bit BYTE values
+ * 
+ * @param h High byte
+ * @param l Low byte
+ * @return 16-bit word
+ */
+static inline uint16_t mkword(uint8_t h, uint8_t l) {return ((h << 8) | l);}
 
 #define DONE(C)         {C->status = 0; C->need = ZDAn_NONE; C->df = NULL;}
 #define ERROR(C,N)      {C->status = (int8_t)N; goto ERR_;}
+#define NEED(C,T,N)     {C->status = (int8_t)N; C->need = T;}
 #define RETSTAT(C)      return (C->status)
 #define RETURN(C,N)     {C->status = (int8_t)N; return N;}
 #define SETSTAT(C,N)    {C->status = (int8_t)N} 
@@ -27,34 +39,69 @@
 #define ED  0xED        // 2-Byte Instruction in 'ED' group
 #define FD  0xFD        // 2-Byte Instruction in 'FD' group
 
+static const char _ccC[]        = "c";
+static const char _ccM[]        = "m";
+static const char _ccNC[]       = "nc";
+static const char _ccNZ[]       = "nz";
+static const char _ccP[]        = "p";
+static const char _ccPE[]       = "pe";
+static const char _ccPO[]       = "po";
+static const char _ccZ[]        = "z";
 static const char _comma[]      = ",";
 static const char _parenL[]     = "(";
 static const char _parenR[]     = ")";
+static const char _prime[]      = "'";
 static const char _regB[]       = "b";
 static const char _regC[]       = "c";
 static const char _regD[]       = "d";
 static const char _regE[]       = "e";
 static const char _regH[]       = "h";
 static const char _regL[]       = "l";
-static const char _regHLp[]     = "(hl)";
+static const char _rpcHL[]      = "(hl)";
 static const char _regA[]       = "a";
-static const char _regBC[]      = "bc";
-static const char _regDE[]      = "de";
-static const char _regHL[]      = "hl";
+static const char _rpBC[]       = "bc";
+static const char _rpDE[]       = "de";
+static const char _rpHL[]       = "hl";
+static const char _rpAF[]       = "af";
 static const char _regSP[]      = "sp";
 static const char _regIX[]      = "ix";
 static const char _regIY[]      = "iy";
 static const char _tab[]        = "\t";
 
-static const char* const _regstrs[] = {
+static cstr const _ccstrs[] = {
+    _ccNZ,
+    _ccZ,
+    _ccNC,
+    _ccC,
+    _ccPO,
+    _ccPE,
+    _ccP,
+    _ccM
+};
+
+static cstr const _regstrs[] = {
     _regB,
     _regC,
     _regD,
     _regE,
     _regH,
     _regL,
-    _regHLp,
+    _rpcHL,
     _regA
+};
+
+static cstr const _rp1strs[] = {
+    _rpBC,
+    _rpDE,
+    _rpHL,
+    _regSP
+};
+
+static cstr const _rp2strs[] = {
+    _rpBC,
+    _rpDE,
+    _rpHL,
+    _rpAF
 };
 
 static bool _initialized;
@@ -62,6 +109,29 @@ static bool _initialized;
 static fmtbyte_t _fmt_byte;
 static fmtword_t _fmt_word;
 static bool _uc; // Upper Case
+
+
+/* *** ******************************************************** *** */
+/* ***                                                          *** */
+/* *** Utility Method Declarations                              *** */
+/* ***                                                          *** */
+/* *** ******************************************************** *** */
+/* */
+static int _catcs(char* buf, cstr s, bool uc);
+static void _catdisaddr(zda_ctx_t* ctx, uint8_t dispbyte);
+static int _catinparens(char* buf, cstr s, bool uc);
+static int _catst(char* buf, cstr s, bool uc);
+static int _catsts(char* buf, cstr s1, cstr s2, bool uc);
+static int _catstscs(char* buf, cstr s1, cstr s2, cstr s3, bool uc);
+static cstr _ccstr(uint8_t inst);
+static cstr _hlixiy(zda_ctx_t * ctx);
+static uint8_t _regn1(uint8_t inst);
+static uint8_t _regn2(uint8_t inst);
+static cstr _regs1(uint8_t inst);
+static cstr _regs2(uint8_t inst);
+static cstr _rp1(uint8_t inst);
+static cstr _rp2(uint8_t inst);
+static int _strcat(char* buf, cstr s, bool uc);
 
 /* *** ******************************************************** *** */
 /* ***                                                          *** */
@@ -409,88 +479,135 @@ static const df_t _dis_fntbl[] = {
 /* *** ******************************************************** *** */
 
 /**
- * @brief Concatenate string `s` to buffer conditionally uppercasing.
- * 
- * @param buf Buffer 
+ * @brief Concatenate a COMMA STR to a buffer
+ *
+ * @param buf Buffer to concatenate to
  * @param s String
  * @param uc Upper Case if true
- * @return int the number of characters advanced
+ * @return int The number of bytes the buffer was advanced (including any bytes skipped)
  */
-static int _strcat(char* buf, const char* s, bool uc) {
-    int n = strlen(buf);
-    char c,u;
-    while ((c = *s++)) {
-        u = (uc ? toupper(c) : c);
-        *(buf+n) = u;
-        n++;
-    }
+static int _catcs(char* buf, cstr s, bool uc) {
+    int n = _strcat(buf, _comma, uc);
+    n += _strcat(buf + n, s, uc);
     return n;
 }
 
 /**
- * @brief Concatenate a TAB STR to a buffer
+ * @brief Concatenate the address calculated from a displacement and include a comment
  * 
- * @param buf The buffer to concatenate into
- * @param s A string
+ * This is used by the DJNZ, JR, JR CC instructions.
+ * 
+ * @param ctx The context to concatenate the calculated address and set the comment
+ * @param dispbyte The unsigned byte displacement value to use 
+ */
+static void _catdisaddr(zda_ctx_t* ctx, uint8_t dispbyte) {
+    char buf[9];
+    int16_t disp = (int16_t)((int8_t)dispbyte);
+    uint16_t da = (((int16_t)ctx->addr + 2) + disp);
+    _fmt_word(buf, da);
+    _strcat(ctx->stmt, buf, _uc);
+    // Put raw displacement and +/-offset in comment
+    _fmt_byte(buf, dispbyte);
+    int n = _strcat(ctx->comment, buf, _uc);
+    sprintf(buf, " (%d)", disp);
+    _strcat(ctx->comment + n, buf, _uc);
+}
+
+/**
+ * @brief Concatenate a string within parentheses to a buffer
+ *
+ * @param buf Buffer to concatenate to
+ * @param s String
  * @param uc Upper Case if true
  * @return int The number of bytes the buffer was advanced (including any bytes skipped)
  */
-static int _catts(char* buf, const char* s, bool uc) {
-    int n = _strcat(buf, _tab, uc);
-    n += _strcat(buf+n, s, uc);
+static int _catinparens(char* buf, cstr s, bool uc) {
+    int n = _strcat(buf, _parenL, uc);
+    n += _strcat(buf + n, s, uc);
+    n += _strcat(buf + n, _parenR, uc);
+    return n;
+}
+
+/**
+ * @brief Concatenate a STR TAB to a buffer
+ *
+ * @param buf Buffer to concatenate to
+ * @param s String
+ * @param uc Upper Case if true
+ * @return int The number of bytes the buffer was advanced (including any bytes skipped)
+ */
+static int _catst(char* buf, cstr s, bool uc) {
+    int n = _strcat(buf, s, uc);
+    n += _strcat(buf + n, _tab, uc);
     return n;
 }
 
 /**
  * @brief Concatenate a STR TAB STR to a buffer
  *
- * @param buf The buffer to concatenate into
+ * @param buf Buffer to concatenate to
  * @param s1 String 1
  * @param s2 String 2
  * @param uc Upper Case if true
  * @return int The number of bytes the buffer was advanced (including any bytes skipped)
  */
-static int _catsts(char* buf, const char* s1, const char* s2, bool uc) {
+static int _catsts(char* buf, cstr s1, cstr s2, bool uc) {
     int n = _strcat(buf, s1, uc);
-    n += _catts(buf+n, s2, uc);
-    return n;
-}
-
-/**
- * @brief Concatenate a TAB STR STR to a buffer
- * 
- * @param buf The buffer to concatenate into
- * @param s1 String 1
- * @param s2 String 2
- * @param uc Upper Case if true
- * @return int The number of bytes the buffer was advanced (including any bytes skipped)
- */
-static int _cattss(char* buf, const char* s1, const char* s2, bool uc) {
-    int n = _catts(buf, s1, uc);
+    n += _strcat(buf+n, _tab, uc);
     n += _strcat(buf+n, s2, uc);
     return n;
 }
 
 /**
- * @brief Concatenate a TAB STR COMMA STR to a buffer using Instruction Register 2
- * 
- * Register 2 pulls from bits 2..0 of the instruction
- * 
- * @param buf The buffer to concatenate into 
+ * @brief Concatenate a STR TAB STR COMMA STR to a buffer
+ *
+ * @param buf Buffer to concatenate to
  * @param s1 String 1
  * @param s2 String 2
+ * @param s3 String 3
+ * @param uc Upper Case if true
  * @return int The number of bytes the buffer was advanced (including any bytes skipped)
  */
-static int _cattscs(char* buf, const char* s1, const char* s2) {
-    int n = _cattss(buf, s1, _comma, _uc);
-    n += _strcat(buf+n, s2, _uc); 
+static int _catstscs(char* buf, cstr s1, cstr s2, cstr s3, bool uc) {
+    int n = _catsts(buf, s1, s2, uc);
+    n += _strcat(buf + n, _comma, uc);
+    n += _strcat(buf+n, s3, uc);
     return n;
 }
 
-static int _cattrcnr(char* buf, const char* r, uint8_t rn) {
-    const char* reg2 = _regstrs[rn];
-    int n = _cattscs(buf, r, reg2);
-    return n;
+/**
+ * @brief Get the condition string based on the instruction
+ * 
+ * @param inst The instruction to get the condition from 
+ * @return cstr The condition
+ */
+static inline cstr _ccstr(uint8_t inst) {
+    return (_ccstrs[((inst & 0b00111000) >> 3)]);
+}
+
+/**
+ * @brief Get the string for HL, IX, or IY based on the context
+ * 
+ * Based on instruction byte 0, the string for HL, IX, or IY is returned.
+ * This should only be called if it is known that one of HL, IX, or IY is to be used.
+ * 
+ * @param ctx Disassembly context
+ * @return cstr "hl", "ix", "iy"
+ */
+static cstr _hlixiy(zda_ctx_t* ctx) {
+    cstr r;
+    switch (ctx->d[0]) {
+        case DD:
+            r = _regIX;
+            break;
+        case FD:
+            r = _regIY;
+            break;
+        default:
+            r = _rpHL;
+            break;
+    }
+    return r;
 }
 
 /**
@@ -502,7 +619,7 @@ static int _cattrcnr(char* buf, const char* r, uint8_t rn) {
  * @param inst The instruction byte to derive the register from
  * @return uint8_t Register number 0 to 7
  */
-static uint8_t _regn1(uint8_t inst) {
+static inline uint8_t _regn1(uint8_t inst) {
     return ((inst & 0b00111000) >> 3);
 }
 
@@ -515,27 +632,79 @@ static uint8_t _regn1(uint8_t inst) {
  * @param inst The instruction byte to derive the register from
  * @return uint8_t Register number 0 to 7
  */
-static uint8_t _regn2(uint8_t inst) {
+static inline uint8_t _regn2(uint8_t inst) {
     return (inst & 0b00000111);
 }
 
-static int _cattrcrn1(char* buf, const char* r, uint8_t inst) {
-    const char* r2 = _regstrs[_regn1(inst)];
-    int n = _cattscs(buf, r, r2);
+/**
+ * @brief Get the register string from the instruction using formula 1
+ *
+ * @see `_regn1`
+ *
+ * @param inst The instruction byte to derive the register from
+ * @return cstr Register string
+ */
+static inline cstr _regs1(uint8_t inst) {
+    return (_regstrs[_regn1(inst)]);
+}
+
+/**
+ * @brief Get the register string from the instruction using formula 2
+ * 
+ * @see `_regn2`
+ * 
+ * @param inst The instruction byte to derive the register from
+ * @return cstr Register string
+ */
+static inline cstr _regs2(uint8_t inst) {
+    return (_regstrs[_regn2(inst)]);
+}
+
+/**
+ * @brief Get "BC", "DE", "HL", or "SP", based on the instruction 
+ * 
+ * Bits 5 and 4 are used to select the register pair (or SP) to return.
+ * 
+ * @param inst The instruction byte to use
+ * @return cstr "bc", "de", "hl", "sp"
+ */
+static cstr _rp1(uint8_t inst) {
+    int i = ((inst & 0b00110000) >> 4);
+    return _rp1strs[i]; 
+}
+
+/**
+ * @brief Get "BC", "DE", "HL", or "AF", based on the instruction
+ *
+ * Bits 5 and 4 are used to select the register pair to return.
+ *
+ * @param inst The instruction byte to use
+ * @return cstr "bc", "de", "hl", "af"
+ */
+static cstr _rp2(uint8_t inst) {
+    int i = ((inst & 0b00110000) >> 4);
+    return _rp2strs[i];
+}
+
+/**
+ * @brief Concatenate string `s` to buffer conditionally uppercasing.
+ *
+ * @param buf Buffer to concatenate to
+ * @param s String
+ * @param uc Upper Case if true
+ * @return int The number of bytes the buffer was advanced (including any bytes skipped)
+ */
+static int _strcat(char* buf, cstr s, bool uc) {
+    int n = strlen(buf);
+    char c, u;
+    while ((c = *s++)) {
+        u = (uc ? toupper(c) : c);
+        *(buf + n) = u;
+        n++;
+    }
     return n;
 }
 
-static int _cattrcrn2(char* buf, const char* r, uint8_t inst) {
-    const char* r2 = _regstrs[_regn2(inst)];
-    int n = _cattscs(buf, r, r2);
-    return n;
-}
-
-static int _inst_t_r_c_rn2(char* buf, const char* istr, const char* r, uint8_t inst) {
-    int n = _strcat(buf, istr, _uc);
-    n += _cattrcrn2(buf + n, _regA, inst);
-    return n;
-}
 
 /* *** ******************************************************** *** */
 /* ***                                                          *** */
@@ -572,76 +741,151 @@ static void _d_2bi(zda_ctx_t* ctx) {
 
 /** @brief ADC  a,r */
 static void _d_adcar(zda_ctx_t* ctx) {
-    _inst_t_r_c_rn2(ctx->inst, zdp_ADC, _regA, ctx->d[0]);
+    cstr r = _regs2(ctx->d[0]);
+    _catstscs(ctx->stmt, zdp_ADC, _regA, r, _uc);
     DONE(ctx);
 }
 
+/** @brief ADD  a,r */
 static void _d_addar(zda_ctx_t* ctx) {
-    _inst_t_r_c_rn2(ctx->inst, zdp_ADD, _regA, ctx->d[0]);
+    cstr r = _regs2(ctx->d[0]);
+    _catstscs(ctx->stmt, zdp_ADD, _regA, r, _uc);
     DONE(ctx);
 }
 
+/** @brief ADD  hl,rp */
 static void _d_addhlrp(zda_ctx_t* ctx) {
+    cstr hlixiy = _hlixiy(ctx);
+    cstr rp = _rp1(ctx->d[0]);
+    _catstscs(ctx->stmt, zdp_ADD, hlixiy, rp, _uc);
+    DONE(ctx);
 }
 
+/** @brief AND  r */
 static void _d_andar(zda_ctx_t* ctx) {
+    cstr r = _regs2(ctx->d[0]);
+    _catsts(ctx->stmt, zdp_AND, r, _uc);
+    DONE(ctx);
 }
 
+/** @brief CALL nn */
 static void _d_call(zda_ctx_t* ctx) {
+    if (ctx->bi < 3) {
+        NEED(ctx, ZDAn_MR, (3 - ctx->bi));
+    }
+    else {
+        char buf[9];
+        uint16_t addr = mkword(ctx->d[2], ctx->d[1]);
+        _fmt_word(buf, addr);
+        _catsts(ctx->stmt, zdp_CALL, buf, _uc);
+        DONE(ctx)
+    }
 }
 
+/** @brief CALL cc,nn */
 static void _d_callcc(zda_ctx_t* ctx) {
+    if (ctx->bi < 3) {
+        NEED(ctx, ZDAn_MR, (3 - ctx->bi));
+    }
+    else {
+        char buf[9];
+        uint16_t addr = mkword(ctx->d[2], ctx->d[1]);
+        _fmt_word(buf, addr);
+        _catstscs(ctx->stmt, zdp_CALL, _ccstr(ctx->d[0]), buf, _uc);
+        DONE(ctx)
+    }
 }
 
+/** @brief CCF */
 static void _d_ccf(zda_ctx_t* ctx) {
-    _strcat(ctx->inst, zdp_CCF, _uc);
+    _strcat(ctx->stmt, zdp_CCF, _uc);
     DONE(ctx);
 }
 
+/** @brief CP r */
 static void _d_cpar(zda_ctx_t* ctx) {
+    cstr r = _regs2(ctx->d[0]);
+    _catsts(ctx->stmt, zdp_CP, r, _uc);
+    DONE(ctx);
 }
 
+/** @brief CPL */
 static void _d_cpl(zda_ctx_t* ctx) {
+    _strcat(ctx->stmt, zdp_CPL, _uc);
+    DONE(ctx);
 }
 
+/** @brief DAA */
 static void _d_daa(zda_ctx_t* ctx) {
+    _strcat(ctx->stmt, zdp_CPL, _uc);
+    DONE(ctx);
 }
 
+/** @brief DEC r */
 static void _d_decreg(zda_ctx_t* ctx) {
+    cstr r = _regs1(ctx->d[0]);
+    _catsts(ctx->stmt, zdp_DEC, r, _uc);
+    DONE(ctx);
 }
 
+/** @brief DEC rp */
 static void _d_decrp(zda_ctx_t* ctx) {
+    cstr rp = _rp1(ctx->d[0]);
+    _catsts(ctx->stmt, zdp_DEC, rp, _uc);
+    DONE(ctx);
 }
 
+/** @brief DI */
 static void _d_di(zda_ctx_t* ctx) {
-    _strcat(ctx->inst, zdp_DI, _uc);
+    _strcat(ctx->stmt, zdp_DI, _uc);
     DONE(ctx);
 }
 
+/** @brief DJNZ disp */
 static void _d_djnz(zda_ctx_t* ctx) {
+    if (ctx->bi < 2) {
+        NEED(ctx, ZDAn_MR, (2 - ctx->bi));
+    }
+    else {
+        _catst(ctx->stmt, zdp_DJNZ, _uc);
+        _catdisaddr(ctx, ctx->d[1]);
+        DONE(ctx)
+    }
 }
 
+/** @brief EI */
 static void _d_ei(zda_ctx_t* ctx) {
-    _strcat(ctx->inst, zdp_EI, _uc);
+    _strcat(ctx->stmt, zdp_EI, _uc);
     DONE(ctx);
 }
 
+/** @brief EX af,af' */
 static void _d_exaf(zda_ctx_t* ctx) {
+    int n = _catstscs(ctx->stmt, zdp_EX, _rpAF, _rpAF, _uc);
+    _strcat(ctx->stmt + n, _prime, _uc);
+    DONE(ctx);
 }
 
+/** @brief EX (sp),hl */
 static void _d_excsphl(zda_ctx_t* ctx) {
+    int n = _catst(ctx->stmt, zdp_EX, _uc);
+    n += _catinparens(ctx->stmt + n, _regSP, _uc);
+    _catcs(ctx->stmt + n, _rpHL, _uc);
+    DONE(ctx);
 }
 
 static void _d_exdehl(zda_ctx_t* ctx) {
 }
 
+/** @brief EXX */
 static void _d_exx(zda_ctx_t* ctx) {
-    _strcat(ctx->inst, zdp_EXX, _uc);
+    _strcat(ctx->stmt, zdp_EXX, _uc);
     DONE(ctx);
 }
 
+/** @brief HALT */
 static void _d_halt(zda_ctx_t* ctx) {
-    _strcat(ctx->inst, zdp_HALT, _uc);
+    _strcat(ctx->stmt, zdp_HALT, _uc);
     DONE(ctx);
 }
 
@@ -693,11 +937,9 @@ static void _d_ldrpnn(zda_ctx_t* ctx) {
 static void _d_ldsphl(zda_ctx_t* ctx) {
 }
 
-/**
- * @brief NOP - No Operation
- */
+/** @brief NOP - No Operation */
 static void _d_nop(zda_ctx_t* ctx) {
-    _strcat(ctx->inst, zdp_NOP, _uc);
+    _strcat(ctx->stmt, zdp_NOP, _uc);
     DONE(ctx);
 }
 
@@ -716,39 +958,45 @@ static void _d_poprp(zda_ctx_t* ctx) {
 static void _d_pushrp(zda_ctx_t* ctx) {
 }
 
+/** @brief RET */
 static void _d_ret(zda_ctx_t* ctx) {
-    _strcat(ctx->inst, zdp_RET, _uc);
+    _strcat(ctx->stmt, zdp_RET, _uc);
     DONE(ctx);
 }
 
 static void _d_retcc(zda_ctx_t* ctx) {
 }
 
+/** @brief RLA */
 static void _d_rla(zda_ctx_t* ctx) {
-    _strcat(ctx->inst, zdp_RLA, _uc);
+    _strcat(ctx->stmt, zdp_RLA, _uc);
     DONE(ctx);
 }
 
+/** @brief RLCA */
 static void _d_rlca(zda_ctx_t* ctx) {
-    _strcat(ctx->inst, zdp_RLCA, _uc);
+    _strcat(ctx->stmt, zdp_RLCA, _uc);
     DONE(ctx);
 }
 
+/** @brief RRA */
 static void _d_rra(zda_ctx_t* ctx) {
-    _strcat(ctx->inst, zdp_RRA, _uc);
+    _strcat(ctx->stmt, zdp_RRA, _uc);
     DONE(ctx);
 }
 
+/** @brief RRCA */
 static void _d_rrca(zda_ctx_t* ctx) {
-    _strcat(ctx->inst, zdp_RRCA, _uc);
+    _strcat(ctx->stmt, zdp_RRCA, _uc);
     DONE(ctx);
 }
 
+/** @brief RST nn */
 static void _d_rstn(zda_ctx_t* ctx) {
     char buf[ZDA_FMT_BYTE_BUF_LEN];
     uint8_t n = ctx->d[0] & 0x38; // opcode & 00111000 is the RST address
     _fmt_byte(buf, n);
-    _catsts(ctx->inst, zdp_RST, buf, _uc);
+    _catsts(ctx->stmt, zdp_RST, buf, _uc);
     sprintf(ctx->comment, "%d", (n >> 3));
     DONE(ctx);
 }
@@ -756,8 +1004,9 @@ static void _d_rstn(zda_ctx_t* ctx) {
 static void _d_sbcar(zda_ctx_t* ctx) {
 }
 
+/** @brief SCF */
 static void _d_scf(zda_ctx_t* ctx) {
-    _strcat(ctx->inst, zdp_SCF, _uc);
+    _strcat(ctx->stmt, zdp_SCF, _uc);
     DONE(ctx);
 }
 
@@ -819,8 +1068,8 @@ static void _d_fd2(zda_ctx_t* ctx) {
 static void _dis_b1(zda_ctx_t* ctx) {
     // Use byte-1 to index into the function table.
     uint8_t b1 = ctx->d[0];
-    const df_t df = _dis_fntbl[b1];
-    df(ctx);
+    ctx->df = _dis_fntbl[b1];
+    ctx->df(ctx);
     return;
 }
 
@@ -849,7 +1098,7 @@ int8_t zda_next(zda_ctx_t* ctx, uint8_t data) {
     if (ctx->status < 0) goto FINALLY_;
     if (ctx->status == ZDA_DONE) ERROR(ctx,ZDAE_UNNEEDED);
     if (ctx->bi >= Z80INST_MAX_BYTES) ERROR(ctx,ZDAE_TOO_MANY_BYTES);
-    ctx->d[ctx->bi] = data;
+    ctx->d[ctx->bi++] = data;
     _disassemble(ctx);
 
 ERR_:
@@ -862,12 +1111,12 @@ void zda_unknown(zda_ctx_t* ctx) {
     char buf[ZDA_FMT_BYTE_BUF_LEN];
 
     strcpy(ctx->comment, "Unknown instruction");
-    strcpy(ctx->inst, "?=");
+    strcpy(ctx->stmt, "?=");
     for (int i = 0; i < ctx->bi; i++) {
         _fmt_byte(buf, ctx->d[i]);
-        _strcat(ctx->inst, buf, _uc);
+        _strcat(ctx->stmt, buf, _uc);
         if (i < (ctx->bi - 1)) {
-            _strcat(ctx->inst, ",", _uc);
+            _strcat(ctx->stmt, ",", _uc);
         }
     }
 }

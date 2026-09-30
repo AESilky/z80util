@@ -30,6 +30,7 @@
 
 GLOBL CMSG zdp_ADC  MSGV("adc");
 GLOBL CMSG zdp_ADD  MSGV("add");
+GLOBL CMSG zdp_AND  MSGV("and");
 GLOBL CMSG zdp_BIT	MSGV("bit");
 GLOBL CMSG zdp_CALL	MSGV("call");
 GLOBL CMSG zdp_CCF	MSGV("ccf");

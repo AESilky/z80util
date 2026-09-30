@@ -48,11 +48,11 @@ unsigned int uint_from_hexstr(const char* str, bool* success) {
     return (retval);
 }
 
-static void _list_inst(zda_ctx_t* ctx, uint16_t addr) {
+static void _list_inst(zda_ctx_t* ctx) {
     static int line = 1;               // Used for listing output
     char buf[3];
     char *comment = (*(ctx->comment) ? "\t\t; " : "");
-    printf("%4d %04X ", line++, addr);
+    printf("%4d %04X ", line++, ctx->addr);
     for (int i = 0; i < Z80INST_MAX_BYTES; i++) {
         const char* db = "  ";
         if (i < ctx->bi) {
@@ -61,7 +61,7 @@ static void _list_inst(zda_ctx_t* ctx, uint16_t addr) {
         }
         printf("%s ", db);
     }
-    printf("%s%s%s\n", ctx->inst, comment, ctx->comment);
+    printf("%s%s%s\n", ctx->stmt, comment, ctx->comment);
 }
 
 static void _usage(const char* name) {
@@ -73,6 +73,7 @@ static void _usage(const char* name) {
     printf(" F : 2-byte 'FD' instructions\n");
     printf(" I : Illegal instructions\n");
     printf(" X nn nn ... : Opcodes provided as hex byte values\n");
+    printf(" -u or --upper : Uppercase disassembly output (must be before 'X' if used)\n");
     printf(" -h or --help : Print this.\n");
     printf(" If no parameters are specified all instruction groups including invalid are used.\n");
 }
@@ -87,6 +88,7 @@ int main(int argc, char** argv){
     uint16_t addr = 0;          // Used for disassembly
     int ds; // Disassembler status
     size_t elements; // Element count for the instruction groups
+    bool uc = false;
 
     // Do all if no arguments were given
     bool b1;    // Single-byte instructions
@@ -127,6 +129,13 @@ int main(int argc, char** argv){
                     xb = true;
                     goto OPTSEND_;
                 case '-':
+                    // check for "-u" or "--upper"
+                    if (strcmp(opts, "-u") == 0 || strcmp(opts, "--upper") == 0) {
+                        uc = true;
+                        // skip to next arg;
+                        while(*opts) opts++;
+                        continue;
+                    }
                     // check for "-h" or "--help"
                     if (strcmp(opts, "-h") != 0 && strcmp(opts, "--help") != 0) {
                         _opt_err(name);
@@ -143,7 +152,7 @@ int main(int argc, char** argv){
     }
 OPTSEND_:
     // Initialize the Disassembler
-    ds = zda_modinit(_fmt_byteh, _fmt_word, false);
+    ds = zda_modinit(_fmt_byteh, _fmt_word, uc);
     if (ds != 0) {
         fprintf(stderr, "Disassembler init error: %s\n", ds);
         goto ERR_RET_;
@@ -232,7 +241,7 @@ OPTSEND_:
             }
         NEXT_:
             // s is 0, list the disassembly
-            _list_inst(&ctx, addr);
+            _list_inst(&ctx);
             addr++;
         }
     }
