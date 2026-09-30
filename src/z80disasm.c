@@ -25,7 +25,7 @@ typedef const char* cstr;
  * @param l Low byte
  * @return 16-bit word
  */
-static inline uint16_t mkword(uint8_t h, uint8_t l) {return ((h << 8) | l);}
+static inline uint16_t _mkword(uint8_t h, uint8_t l) {return ((h << 8) | l);}
 
 #define DONE(C)         {C->status = 0; C->need = ZDAn_NONE; C->df = NULL;}
 #define ERROR(C,N)      {C->status = (int8_t)N; goto ERR_;}
@@ -48,9 +48,12 @@ static const char _ccPE[]       = "pe";
 static const char _ccPO[]       = "po";
 static const char _ccZ[]        = "z";
 static const char _comma[]      = ",";
+static const char _empty[]      = "";
 static const char _parenL[]     = "(";
 static const char _parenR[]     = ")";
 static const char _prime[]      = "'";
+static const char _regA[]       = "a";
+static const char _regAc[]      = "a,";
 static const char _regB[]       = "b";
 static const char _regC[]       = "c";
 static const char _regD[]       = "d";
@@ -58,7 +61,6 @@ static const char _regE[]       = "e";
 static const char _regH[]       = "h";
 static const char _regL[]       = "l";
 static const char _rpcHL[]      = "(hl)";
-static const char _regA[]       = "a";
 static const char _rpBC[]       = "bc";
 static const char _rpDE[]       = "de";
 static const char _rpHL[]       = "hl";
@@ -118,17 +120,19 @@ static bool _uc; // Upper Case
 /* *** ******************************************************** *** */
 /* */
 static int _catcs(char* buf, cstr s, bool uc);
-static void _catdisaddr(zda_ctx_t* ctx, uint8_t dispbyte);
+static void _catdispaddr(zda_ctx_t* ctx, uint8_t dispbyte);
 static int _catinparens(char* buf, cstr s, bool uc);
 static int _catst(char* buf, cstr s, bool uc);
 static int _catsts(char* buf, cstr s1, cstr s2, bool uc);
+static int _catstsc(char* buf, cstr s1, cstr s2, bool uc);
 static int _catstscs(char* buf, cstr s1, cstr s2, cstr s3, bool uc);
-static cstr _ccstr(uint8_t inst);
+static int _catstss(char* buf, cstr s1, cstr s2, cstr s3, bool uc);
+static cstr _condstr(uint8_t inst);
 static cstr _hlixiy(zda_ctx_t * ctx);
 static uint8_t _regn1(uint8_t inst);
 static uint8_t _regn2(uint8_t inst);
-static cstr _regs1(uint8_t inst);
-static cstr _regs2(uint8_t inst);
+static cstr _regstr1(uint8_t inst);
+static cstr _regstr2(uint8_t inst);
 static cstr _rp1(uint8_t inst);
 static cstr _rp2(uint8_t inst);
 static int _strcat(char* buf, cstr s, bool uc);
@@ -500,8 +504,8 @@ static int _catcs(char* buf, cstr s, bool uc) {
  * @param ctx The context to concatenate the calculated address and set the comment
  * @param dispbyte The unsigned byte displacement value to use 
  */
-static void _catdisaddr(zda_ctx_t* ctx, uint8_t dispbyte) {
-    char buf[9];
+static void _catdispaddr(zda_ctx_t* ctx, uint8_t dispbyte) {
+    char buf[ZDA_FMT_WORD_BUF_LEN];
     int16_t disp = (int16_t)((int8_t)dispbyte);
     uint16_t da = (((int16_t)ctx->addr + 2) + disp);
     _fmt_word(buf, da);
@@ -559,6 +563,21 @@ static int _catsts(char* buf, cstr s1, cstr s2, bool uc) {
 }
 
 /**
+ * @brief Concatenate a STR TAB STR COMMA to a buffer
+ *
+ * @param buf Buffer to concatenate to
+ * @param s1 String 1
+ * @param s2 String 2
+ * @param uc Upper Case if true
+ * @return int The number of bytes the buffer was advanced (including any bytes skipped)
+ */
+static int _catstsc(char* buf, cstr s1, cstr s2, bool uc) {
+    int n = _catsts(buf, s1, s2, uc);
+    n += _strcat(buf + n, _comma, uc);
+    return n;
+}
+
+/**
  * @brief Concatenate a STR TAB STR COMMA STR to a buffer
  *
  * @param buf Buffer to concatenate to
@@ -576,12 +595,28 @@ static int _catstscs(char* buf, cstr s1, cstr s2, cstr s3, bool uc) {
 }
 
 /**
+ * @brief Concatenate a STR TAB STR STR to a buffer
+ *
+ * @param buf Buffer to concatenate to
+ * @param s1 String 1
+ * @param s2 String 2
+ * @param s3 String 3
+ * @param uc Upper Case if true
+ * @return int The number of bytes the buffer was advanced (including any bytes skipped)
+ */
+static int _catstss(char* buf, cstr s1, cstr s2, cstr s3, bool uc) {
+    int n = _catsts(buf, s1, s2, uc);
+    n += _strcat(buf + n, s3, uc);
+    return n;
+}
+
+/**
  * @brief Get the condition string based on the instruction
  * 
  * @param inst The instruction to get the condition from 
  * @return cstr The condition
  */
-static inline cstr _ccstr(uint8_t inst) {
+static inline cstr _condstr(uint8_t inst) {
     return (_ccstrs[((inst & 0b00111000) >> 3)]);
 }
 
@@ -644,7 +679,7 @@ static inline uint8_t _regn2(uint8_t inst) {
  * @param inst The instruction byte to derive the register from
  * @return cstr Register string
  */
-static inline cstr _regs1(uint8_t inst) {
+static inline cstr _regstr1(uint8_t inst) {
     return (_regstrs[_regn1(inst)]);
 }
 
@@ -656,7 +691,7 @@ static inline cstr _regs1(uint8_t inst) {
  * @param inst The instruction byte to derive the register from
  * @return cstr Register string
  */
-static inline cstr _regs2(uint8_t inst) {
+static inline cstr _regstr2(uint8_t inst) {
     return (_regstrs[_regn2(inst)]);
 }
 
@@ -718,8 +753,7 @@ static int _strcat(char* buf, cstr s, bool uc) {
  * The context contains the first byte. Set up for the 2nd.
  */
 static void _d_2bi(zda_ctx_t* ctx) {
-    ctx->need = ZDAn_IF2;
-    ctx->status = 1;            // At least one more byte is needed
+    NEED(ctx, ZDAn_IF2, 1); // At least one more byte is needed
     switch (ctx->d[0]) {
     case CB:
         ctx->df = _d_cb2;   // Process CB 2nd IF
@@ -741,14 +775,14 @@ static void _d_2bi(zda_ctx_t* ctx) {
 
 /** @brief ADC  a,r */
 static void _d_adcar(zda_ctx_t* ctx) {
-    cstr r = _regs2(ctx->d[0]);
+    cstr r = _regstr2(ctx->d[0]);
     _catstscs(ctx->stmt, zdp_ADC, _regA, r, _uc);
     DONE(ctx);
 }
 
 /** @brief ADD  a,r */
 static void _d_addar(zda_ctx_t* ctx) {
-    cstr r = _regs2(ctx->d[0]);
+    cstr r = _regstr2(ctx->d[0]);
     _catstscs(ctx->stmt, zdp_ADD, _regA, r, _uc);
     DONE(ctx);
 }
@@ -763,7 +797,7 @@ static void _d_addhlrp(zda_ctx_t* ctx) {
 
 /** @brief AND  r */
 static void _d_andar(zda_ctx_t* ctx) {
-    cstr r = _regs2(ctx->d[0]);
+    cstr r = _regstr2(ctx->d[0]);
     _catsts(ctx->stmt, zdp_AND, r, _uc);
     DONE(ctx);
 }
@@ -774,8 +808,8 @@ static void _d_call(zda_ctx_t* ctx) {
         NEED(ctx, ZDAn_MR, (3 - ctx->bi));
     }
     else {
-        char buf[9];
-        uint16_t addr = mkword(ctx->d[2], ctx->d[1]);
+        char buf[ZDA_FMT_WORD_BUF_LEN];
+        uint16_t addr = _mkword(ctx->d[2], ctx->d[1]);
         _fmt_word(buf, addr);
         _catsts(ctx->stmt, zdp_CALL, buf, _uc);
         DONE(ctx)
@@ -788,10 +822,10 @@ static void _d_callcc(zda_ctx_t* ctx) {
         NEED(ctx, ZDAn_MR, (3 - ctx->bi));
     }
     else {
-        char buf[9];
-        uint16_t addr = mkword(ctx->d[2], ctx->d[1]);
+        char buf[ZDA_FMT_WORD_BUF_LEN];
+        uint16_t addr = _mkword(ctx->d[2], ctx->d[1]);
         _fmt_word(buf, addr);
-        _catstscs(ctx->stmt, zdp_CALL, _ccstr(ctx->d[0]), buf, _uc);
+        _catstscs(ctx->stmt, zdp_CALL, _condstr(ctx->d[0]), buf, _uc);
         DONE(ctx)
     }
 }
@@ -804,7 +838,7 @@ static void _d_ccf(zda_ctx_t* ctx) {
 
 /** @brief CP r */
 static void _d_cpar(zda_ctx_t* ctx) {
-    cstr r = _regs2(ctx->d[0]);
+    cstr r = _regstr2(ctx->d[0]);
     _catsts(ctx->stmt, zdp_CP, r, _uc);
     DONE(ctx);
 }
@@ -823,7 +857,7 @@ static void _d_daa(zda_ctx_t* ctx) {
 
 /** @brief DEC r */
 static void _d_decreg(zda_ctx_t* ctx) {
-    cstr r = _regs1(ctx->d[0]);
+    cstr r = _regstr1(ctx->d[0]);
     _catsts(ctx->stmt, zdp_DEC, r, _uc);
     DONE(ctx);
 }
@@ -844,11 +878,11 @@ static void _d_di(zda_ctx_t* ctx) {
 /** @brief DJNZ disp */
 static void _d_djnz(zda_ctx_t* ctx) {
     if (ctx->bi < 2) {
-        NEED(ctx, ZDAn_MR, (2 - ctx->bi));
+        NEED(ctx, ZDAn_MR, 1);
     }
     else {
         _catst(ctx->stmt, zdp_DJNZ, _uc);
-        _catdisaddr(ctx, ctx->d[1]);
+        _catdispaddr(ctx, ctx->d[1]);
         DONE(ctx)
     }
 }
@@ -874,7 +908,10 @@ static void _d_excsphl(zda_ctx_t* ctx) {
     DONE(ctx);
 }
 
+/** @brief EX de,hl */
 static void _d_exdehl(zda_ctx_t* ctx) {
+    _catstscs(ctx->stmt, zdp_EX, _rpDE, _rpHL, _uc);
+    DONE(ctx);
 }
 
 /** @brief EXX */
@@ -889,52 +926,170 @@ static void _d_halt(zda_ctx_t* ctx) {
     DONE(ctx);
 }
 
+/** @brief in a,(n) */
 static void _d_inan(zda_ctx_t* ctx) {
+    int n = _catst(ctx->stmt, zdp_IN, _uc);
+    _catinparens(ctx->stmt + n, _regA, _uc);
+    DONE(ctx);
 }
 
+/** @brief INC r */
 static void _d_increg(zda_ctx_t* ctx) {
+    _catsts(ctx->stmt, zdp_INC, _regstr1(ctx->d[0]), _uc);
+    DONE(ctx);
 }
 
+/** @brief INC rp */
 static void _d_incrp(zda_ctx_t* ctx) {
+    _catsts(ctx->stmt, zdp_INC, _rp1(ctx->d[0]), _uc);
+    DONE(ctx);
 }
 
+/** @brief JP nn */
 static void _d_jp(zda_ctx_t* ctx) {
+    if (ctx->bi < 3) {
+        NEED(ctx, ZDAn_MR, (3 - ctx->bi));
+    }
+    else {
+        char buf[ZDA_FMT_WORD_BUF_LEN];
+        uint16_t addr = _mkword(ctx->d[2], ctx->d[1]);
+        _fmt_word(buf, addr);
+        _catsts(ctx->stmt, zdp_JP, buf, _uc);
+        DONE(ctx)
+    }
 }
 
+/** @brief JP cc,nn */
 static void _d_jpcc(zda_ctx_t* ctx) {
+    if (ctx->bi < 3) {
+        NEED(ctx, ZDAn_MR, (3 - ctx->bi));
+    }
+    else {
+        char buf[ZDA_FMT_WORD_BUF_LEN];
+        uint16_t addr = _mkword(ctx->d[2], ctx->d[1]);
+        _fmt_word(buf, addr);
+        _catstscs(ctx->stmt, zdp_JP, _condstr(ctx->d[0]), buf, _uc);
+        DONE(ctx)
+    }
 }
 
+/** @brief JP (hl) */
 static void _d_jpchl(zda_ctx_t* ctx) {
+    int n = _catst(ctx->stmt, zdp_JP, _uc);
+    _catinparens(ctx->stmt + n, _hlixiy(ctx), _uc);
+    DONE(ctx);
 }
 
+/** @brief JR disp */
 static void _d_jr(zda_ctx_t* ctx) {
+    if (ctx->bi < 2) {
+        NEED(ctx, ZDAn_MR, 1);
+    }
+    else {
+        _catst(ctx->stmt, zdp_JR, _uc);
+        _catdispaddr(ctx, ctx->d[1]);
+        DONE(ctx)
+    }
 }
 
+/** @brief JR cc,disp */
 static void _d_jrcc(zda_ctx_t* ctx) {
+    if (ctx->bi < 2) {
+        NEED(ctx, ZDAn_MR, 1);
+    }
+    else {
+        _catstsc(ctx->stmt, zdp_JR, _condstr(ctx->d[0]), _uc);
+        _catdispaddr(ctx, ctx->d[1]);
+        DONE(ctx)
+    }
 }
 
+/** @brief LD a,(rp) */
 static void _d_ldacrp(zda_ctx_t* ctx) {
+    int n = _catstsc(ctx->stmt, zdp_LD, _regA, _uc);
+    _catinparens(ctx->stmt + n, _rp1(ctx->d[0]), _uc);
+    DONE(ctx);
 }
 
+/** @brief LD (nn),a */
 static void _d_ldcnna(zda_ctx_t* ctx) {
+    if (ctx->bi < 3) {
+        NEED(ctx, ZDAn_MR, (3 - ctx->bi));
+    }
+    else {
+        char buf[ZDA_FMT_WORD_BUF_LEN];
+        uint16_t addr = _mkword(ctx->d[2], ctx->d[1]);
+        _fmt_word(buf, addr);
+        int n = _catst(ctx->stmt, zdp_LD, _uc);
+        n += _catinparens(ctx->stmt + n, buf, _uc);
+        _catcs(ctx->stmt + n, _regA, _uc);
+        DONE(ctx)
+    }
 }
 
+/** @brief LD (nn),hl */
 static void _d_ldcnnhl(zda_ctx_t* ctx) {
+    if (ctx->bi < 3) {
+        NEED(ctx, ZDAn_MR, (3 - ctx->bi));
+    }
+    else {
+        char buf[ZDA_FMT_WORD_BUF_LEN];
+        uint16_t addr = _mkword(ctx->d[2], ctx->d[1]);
+        _fmt_word(buf, addr);
+        int n = _catst(ctx->stmt, zdp_LD, _uc);
+        n += _catinparens(ctx->stmt + n, buf, _uc);
+        _catcs(ctx->stmt + n, _hlixiy(ctx), _uc);
+        DONE(ctx)
+    }
 }
 
+/** @brief LD (rp),a */
 static void _d_ldcrpa(zda_ctx_t* ctx) {
+    int n = _catst(ctx->stmt, zdp_LD, _uc);
+    n += _catinparens(ctx->stmt +n, _rp1(ctx->d[0]), _uc);
+    _catcs(ctx->stmt + n, _regA, _uc);
+    DONE(ctx);
 }
 
+/** @brief LD r,n */
 static void _d_ldregn(zda_ctx_t* ctx) {
+    if (ctx->bi < 2) {
+        NEED(ctx, ZDAn_MR, 1);
+    }
+    else {
+        char buf[ZDA_FMT_BYTE_BUF_LEN];
+        _fmt_byte(buf, ctx->d[1]);
+        int n = _catstsc(ctx->stmt, zdp_LD, _regstr1(ctx->d[0]), _uc);
+        _strcat(ctx->stmt + n, buf, _uc);
+        DONE(ctx)
+    }
 }
 
+/** @brief LD r,r */
 static void _d_ldregreg(zda_ctx_t* ctx) {
+    _catstscs(ctx->stmt, zdp_LD, _regstr1(ctx->d[0]), _regstr2(ctx->d[0]), _uc);
+    DONE(ctx);
 }
 
+/** @brief LD rp,nn */
 static void _d_ldrpnn(zda_ctx_t* ctx) {
+    if (ctx->bi < 3) {
+        NEED(ctx, ZDAn_MR, (3 - ctx->bi));
+    }
+    else {
+        char buf[ZDA_FMT_WORD_BUF_LEN];
+        uint16_t addr = _mkword(ctx->d[2], ctx->d[1]);
+        _fmt_word(buf, addr);
+        int n = _catsts(ctx->stmt, zdp_LD, _rp1(ctx->d[0]), _uc);
+        _catcs(ctx->stmt + n, buf, _uc);
+        DONE(ctx)
+    }
 }
 
+/** @brief LD sp,hl */
 static void _d_ldsphl(zda_ctx_t* ctx) {
+    _catstscs(ctx->stmt, zdp_LD, _regSP, _hlixiy(ctx), _uc);
+    DONE(ctx);
 }
 
 /** @brief NOP - No Operation */
@@ -943,19 +1098,82 @@ static void _d_nop(zda_ctx_t* ctx) {
     DONE(ctx);
 }
 
+/** @brief Operation-On-A_with_N : add a,n, adc a,n, sub n, sbc a,n, and n, xor n, or n, cp n */
 static void _d_opan(zda_ctx_t* ctx) {
+    if (ctx->bi < 2) {
+        NEED(ctx, ZDAn_MR, 1);
+    }
+    else {
+        char buf[ZDA_FMT_BYTE_BUF_LEN];
+        _fmt_byte(buf, ctx->d[1]);
+        int op = (int)((ctx->d[0] & 0b00111000) >> 3);
+        cstr inst;
+        cstr ac = _empty;
+        switch (op) {
+            case 0:
+                inst = zdp_ADD;
+                ac = _regAc;
+                break;
+            case 1:
+                inst = zdp_ADC;
+                ac = _regAc;
+                break;
+            case 2:
+                inst = zdp_SUB;
+                break;
+            case 3:
+                inst = zdp_SBC;
+                ac = _regAc;
+                break;
+            case 4:
+                inst = zdp_AND;
+                break;
+            case 5:
+                inst = zdp_XOR;
+                break;
+            case 6:
+                inst = zdp_OR;
+                break;
+            case 7:
+                inst = zdp_CP;
+                break;
+        }
+        _catstss(ctx->stmt, inst, ac, buf, _uc);
+        DONE(ctx);
+    }
 }
 
+/** @brief OR r */
 static void _d_orar(zda_ctx_t* ctx) {
+    _catsts(ctx->stmt, zdp_OR, _regstr2(ctx->d[0]), _uc);
+    DONE(ctx);
 }
 
+/** @brief OUT (n),a */
 static void _d_outna(zda_ctx_t* ctx) {
+    if (ctx->bi < 2) {
+        NEED(ctx, ZDAn_MR, 1);
+    }
+    else {
+        char buf[ZDA_FMT_BYTE_BUF_LEN];
+        _fmt_byte(buf, ctx->d[1]);
+        int n = _catst(ctx->stmt, zdp_OUT, _uc);
+        n += _catinparens(ctx->stmt + n, buf, _uc);
+        _catcs(ctx->stmt + n, _regA, _uc);
+        DONE(ctx);
+    }
 }
 
+/** @brief POP rp */
 static void _d_poprp(zda_ctx_t* ctx) {
+    _catsts(ctx->stmt, zdp_POP, _rp2(ctx->d[0]), _uc);
+    DONE(ctx);
 }
 
+/** @brief PUSH rp */
 static void _d_pushrp(zda_ctx_t* ctx) {
+    _catsts(ctx->stmt, zdp_PUSH, _rp2(ctx->d[0]), _uc);
+    DONE(ctx);
 }
 
 /** @brief RET */
@@ -964,7 +1182,10 @@ static void _d_ret(zda_ctx_t* ctx) {
     DONE(ctx);
 }
 
+/** @brief RET cc */
 static void _d_retcc(zda_ctx_t* ctx) {
+    _catsts(ctx->stmt, zdp_RET, _condstr(ctx->d[0]), _uc);
+    DONE(ctx);
 }
 
 /** @brief RLA */
@@ -1001,7 +1222,10 @@ static void _d_rstn(zda_ctx_t* ctx) {
     DONE(ctx);
 }
 
+/** @brief SBC a,r */
 static void _d_sbcar(zda_ctx_t* ctx) {
+    _catstscs(ctx->stmt, zdp_SBC, _regA, _regstr2(ctx->d[0]), _uc);
+    DONE(ctx);
 }
 
 /** @brief SCF */
@@ -1010,10 +1234,16 @@ static void _d_scf(zda_ctx_t* ctx) {
     DONE(ctx);
 }
 
+/** @brief SUB r */
 static void _d_subar(zda_ctx_t* ctx) {
+    _catsts(ctx->stmt, zdp_SUB, _regstr2(ctx->d[0]), _uc);
+    DONE(ctx);
 }
 
+/** @brief XOR r */
 static void _d_xorar(zda_ctx_t* ctx) {
+    _catsts(ctx->stmt, zdp_XOR, _regstr2(ctx->d[0]), _uc);
+    DONE(ctx);
 }
 
 

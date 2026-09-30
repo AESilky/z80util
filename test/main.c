@@ -86,6 +86,7 @@ static void _opt_err(const char* name) {
 int main(int argc, char** argv){
     const char* name = *argv++; argc--;
     uint16_t addr = 0;          // Used for disassembly
+    zda_ctx_t ctx;
     int ds; // Disassembler status
     size_t elements; // Element count for the instruction groups
     bool uc = false;
@@ -98,7 +99,7 @@ int main(int argc, char** argv){
     bool fd;    // FD group 2-byte instructions
     bool ig;    // Illegal (2-byte) instructions
     bool xb = false;    // Assume the groups will be used
-    b1 = cb = dd = ed = fd = ig = (argc > 1 ? false : true);
+    b1 = cb = dd = ed = fd = ig = (argc > 0 ? false : true);
 
     while (argc > 0) {
         char opt;
@@ -161,7 +162,31 @@ OPTSEND_:
         printf("Single Byte Instructions...\n");
         elements = z1b_len();
         for (int i = 0; i < elements; i++) {
-            printf("%02X\n", *(z80_1byte + i));
+            int8_t s = zda_begin(&ctx, addr, *(z80_1byte + i));
+            if (s == 0) {
+                goto NEXT_1_;
+            }
+            while (s > 0 && ++i < elements) {
+                // feed the disassembler additional bytes
+                // s indicates the minimum needed, but we only feed one at a time
+                addr++; // move to next address
+                s = zda_next(&ctx, *(z80_1byte + i));
+            }
+            if (s < 0 || i >= elements) {
+                // There was a problem.
+                if (s < 0) {
+                    fprintf(stderr, "Disassembler indicated error: %d\n", s);
+                    goto ERR_RET_;
+                }
+                if (i >= elements) {
+                    fprintf(stderr, "Not enough byte values provided. Need at least %d more.\n", s);
+                    goto ERR_RET_;
+                }
+            }
+        NEXT_1_:
+            // s is 0, list the disassembly
+            _list_inst(&ctx);
+            addr++;
         }
     }
     if (cb) {
@@ -211,7 +236,6 @@ OPTSEND_:
                 goto ERR_RET_;
             }
         }
-        zda_ctx_t ctx;
         // Okay, they are all valid hex bytes. Start calling the disassemble.
         for (int i = 0; i < argc; i++) {
             bool success;
@@ -219,7 +243,7 @@ OPTSEND_:
             // no need to check success - all arguments were checked above
             int8_t s = zda_begin(&ctx, addr, b);
             if (s == 0) {
-                goto NEXT_;
+                goto NEXT_X_;
             }
             while (s > 0 && ++i < argc) {
                 // feed the disassembler additional bytes
@@ -239,7 +263,7 @@ OPTSEND_:
                     goto ERR_RET_;
                 }
             }
-        NEXT_:
+        NEXT_X_:
             // s is 0, list the disassembly
             _list_inst(&ctx);
             addr++;
