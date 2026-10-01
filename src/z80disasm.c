@@ -1256,10 +1256,98 @@ static void _d_xorar(zda_ctx_t* ctx) {
 /**
  * Disassemble 'CB' group byte-2
  *
- * (Context assumed valid)
+ * Bit - Test, Set, Reset, and Movement instructions
+ *      x x n n n r r r
+ *      | | | | | +-+-+-- reg
+ *      | | +-+-+-------- bit number, or movement
+ *      +-+-------------- instruction
+ * 
+ *  xx  = 00 = register movement
+ *      = 01 = bit test (bit)
+ *      = 10 = reset (res)
+ *      = 11 = set
+ *  if xx = 00:
+ *      nnn = movement type
+ *          = 000 = rlc
+ *          = 001 = rrc
+ *          = 010 = rl
+ *          = 011 = rr
+ *          = 100 = sla
+ *          = 101 = sra
+ *          = 110 = not valid
+ *          = 111 = srl
+ *  else;
+ *      nnn = bit number
+ *  rrr = register (using the 'pure' register numbers)
+ * 
+ * All are 2 byte instructions - no additional data required.
  */
 static void _d_cb2(zda_ctx_t* ctx) {
+    uint8_t if2 = ctx->d[1];
+    uint8_t op = ((if2 & 0b11000000) >> 6);
+    uint8_t bitmov = ((if2 & 0b00111000) >> 3);
+    uint8_t reg = (if2 & 0b00000111);
+    cstr s1, s2 = (cstr)0;  // s1 = inst, s2 = bit or NULL
+    char buf[ZDA_FMT_BYTE_BUF_LEN];
 
+    // Assume we will need a bit number
+    sprintf(buf, "%d", bitmov);
+
+    switch (op) {
+        case 0: // Movement
+            switch (bitmov) {
+                case 0:
+                    s1 = zdp_RLC;
+                    break;
+                case 1:
+                    s1 = zdp_RRC;
+                    break;
+                case 2:
+                    s1 = zdp_RL;
+                    break;
+                case 3:
+                    s1 = zdp_RR;
+                    break;
+                case 4:
+                    s1 = zdp_SLA;
+                    break;
+                case 5:
+                    s1 = zdp_SRA;
+                    break;
+                case 6:
+                    // This is illegal
+                    ctx->df = NULL;
+                    ERROR(ctx, ZDAE_INVALID_INSTRUCTION);
+                case 7:
+                    s1 = zdp_SRL;
+                    break;
+            }
+            break;
+        case 1: // bit (test)
+            s1 = zdp_BIT;
+            s2 = buf;
+            break;
+        case 2: // res
+            s1 = zdp_RES;
+            s2 = buf;
+            break;
+        case 3: // set
+            s1 = zdp_SET;
+            s2 = buf;
+            break;
+    }
+    // Build the statement
+    if (s2) {
+        // It is one of the bit instructions, so... INST bit,r
+        _catstscs(ctx->stmt, s1, s2, _regstrs[reg], _uc);
+    }
+    else {
+        // INST r
+        _catsts(ctx->stmt, s1, _regstrs[reg], _uc);
+    }
+    DONE(ctx);
+ERR_:
+    return;
 }
 
 /**
@@ -1334,6 +1422,21 @@ int8_t zda_next(zda_ctx_t* ctx, uint8_t data) {
 ERR_:
 FINALLY_:
     RETSTAT(ctx);
+}
+
+void zda_invalid(zda_ctx_t* ctx) {
+    // Create the instruction and comment content for an invalid instruction
+    char buf[ZDA_FMT_BYTE_BUF_LEN];
+
+    strcpy(ctx->comment, "Invalid instruction");
+    strcpy(ctx->stmt, "!=");
+    for (int i = 0; i < ctx->bi; i++) {
+        _fmt_byte(buf, ctx->d[i]);
+        _strcat(ctx->stmt, buf, _uc);
+        if (i < (ctx->bi - 1)) {
+            _strcat(ctx->stmt, ",", _uc);
+        }
+    }
 }
 
 void zda_unknown(zda_ctx_t* ctx) {

@@ -24,12 +24,14 @@ typedef enum ZDA_STATUS_I_ {
     ZDAei_unknown,
     ZDAei_unneeded,
     ZDAei_too_many_bytes,
+    ZDAei_invalid_inst,
     ZDAei_df_null,
 } zda_status_i_t;
 #define ZDAE_UNINITIALIZED (-(ZDAei_uninitialized))     // Module has not been initialized
 #define ZDAE_UNKNOWN (-(ZDAei_unknown))                 // OpCode unknown (disassembly error)
 #define ZDAE_UNNEEDED (-(ZDAei_unneeded))               // Unneeded call (already done)
-#define ZDAE_TOO_MANY_BYTES (-(ZDAei_too_many_bytes))   
+#define ZDAE_TOO_MANY_BYTES (-(ZDAei_too_many_bytes))   // Too many bytes for the disassembly
+#define ZDAE_INVALID_INSTRUCTION (-(ZDAei_invalid_inst))    // Invalid instruction  
 #define ZDAE_DF_NULL (-(ZDAei_df_null))                 // (internal use) Function NULL
 
 typedef enum ZDA_NEED_T_ {
@@ -148,6 +150,18 @@ extern int8_t zda_begin(zda_ctx_t* ctx, uint16_t addr, uint8_t data);
  * @return int8_t Status value (@see `zda_begin`)
  */
 extern int8_t zda_next(zda_ctx_t* ctx, uint8_t data);
+
+/**
+ * @brief Format an INVALID instruction disassembly into a printable string.
+ * @ingroup z80da
+ *
+ * If the result of a disassembly is `ZDAE_INVALID_INSTRUCTION`, this will format
+ * the collected bytes into a string in the format '! = byte1 [byte2...]' in the
+ * context `inst` field and possibly more information in the `comment` field.
+ *
+ * @param ctx The context used in the disassembly
+ */
+extern void zda_invalid(zda_ctx_t* ctx);
 
 /**
  * @brief Format an UNKNOWN instruction disassembly into a printable string.
