@@ -60,14 +60,7 @@ static const char _regD[]       = "d";
 static const char _regE[]       = "e";
 static const char _regH[]       = "h";
 static const char _regL[]       = "l";
-static const char _rpcHL[]      = "(hl)";
-static const char _rpBC[]       = "bc";
-static const char _rpDE[]       = "de";
-static const char _rpHL[]       = "hl";
-static const char _rpAF[]       = "af";
-static const char _regSP[]      = "sp";
-static const char _regIX[]      = "ix";
-static const char _regIY[]      = "iy";
+static const char _regcHL[]     = "(hl)";
 static const char _tab[]        = "\t";
 
 static cstr const _ccstrs[] = {
@@ -88,22 +81,25 @@ static cstr const _regstrs[] = {
     _regE,
     _regH,
     _regL,
-    _rpcHL,
+    _regcHL,
     _regA
 };
 
+/** @brief Register number for '(hl)' - used for some validity tests */
+static uint8_t _regn_cHL = 6;
+
 static cstr const _rp1strs[] = {
-    _rpBC,
-    _rpDE,
-    _rpHL,
-    _regSP
+    zdp_BC,
+    zdp_DE,
+    zdp_HL,
+    zdp_SP
 };
 
 static cstr const _rp2strs[] = {
-    _rpBC,
-    _rpDE,
-    _rpHL,
-    _rpAF
+    zdp_BC,
+    zdp_DE,
+    zdp_HL,
+    zdp_AF
 };
 
 static bool _initialized;
@@ -122,6 +118,7 @@ static bool _uc; // Upper Case
 static int _catcs(char* buf, cstr s, bool uc);
 static void _catdispaddr(zda_ctx_t* ctx, uint8_t dispbyte);
 static int _catinparens(char* buf, cstr s, bool uc);
+static int _catsc(char* buf, cstr s, bool uc);
 static int _catst(char* buf, cstr s, bool uc);
 static int _catsts(char* buf, cstr s1, cstr s2, bool uc);
 static int _catstsc(char* buf, cstr s1, cstr s2, bool uc);
@@ -213,6 +210,15 @@ static void _d_cb2(zda_ctx_t * ctx);
 static void _d_dd2(zda_ctx_t * ctx);
 static void _d_ed2(zda_ctx_t * ctx);
 static void _d_fd2(zda_ctx_t * ctx);
+
+/* *** ******************************************************** *** */
+/* ***                                                          *** */
+/* *** Additional Processing Method Declarations for 'ED'       *** */
+/* ***                                                          *** */
+/* *** ******************************************************** *** */
+/* */
+static void _d_edld(zda_ctx_t* ctx);
+
 
 
 /** @brief Instruction Fetch 1 processing function table */
@@ -533,6 +539,20 @@ static int _catinparens(char* buf, cstr s, bool uc) {
 }
 
 /**
+ * @brief Concatenate a STR COMMA to a buffer
+ *
+ * @param buf Buffer to concatenate to
+ * @param s String
+ * @param uc Upper Case if true
+ * @return int The number of bytes the buffer was advanced (including any bytes skipped)
+ */
+static int _catsc(char* buf, cstr s, bool uc) {
+    int n = _strcat(buf, s, uc);
+    n += _strcat(buf + n, _comma, uc);
+    return n;
+}
+
+/**
  * @brief Concatenate a STR TAB to a buffer
  *
  * @param buf Buffer to concatenate to
@@ -633,13 +653,13 @@ static cstr _hlixiy(zda_ctx_t* ctx) {
     cstr r;
     switch (ctx->d[0]) {
         case DD:
-            r = _regIX;
+            r = zdp_IX;
             break;
         case FD:
-            r = _regIY;
+            r = zdp_IY;
             break;
         default:
-            r = _rpHL;
+            r = zdp_HL;
             break;
     }
     return r;
@@ -895,7 +915,7 @@ static void _d_ei(zda_ctx_t* ctx) {
 
 /** @brief EX af,af' */
 static void _d_exaf(zda_ctx_t* ctx) {
-    int n = _catstscs(ctx->stmt, zdp_EX, _rpAF, _rpAF, _uc);
+    int n = _catstscs(ctx->stmt, zdp_EX, zdp_AF, zdp_AF, _uc);
     _strcat(ctx->stmt + n, _prime, _uc);
     DONE(ctx);
 }
@@ -903,14 +923,14 @@ static void _d_exaf(zda_ctx_t* ctx) {
 /** @brief EX (sp),hl */
 static void _d_excsphl(zda_ctx_t* ctx) {
     int n = _catst(ctx->stmt, zdp_EX, _uc);
-    n += _catinparens(ctx->stmt + n, _regSP, _uc);
-    _catcs(ctx->stmt + n, _rpHL, _uc);
+    n += _catinparens(ctx->stmt + n, zdp_SP, _uc);
+    _catcs(ctx->stmt + n, zdp_HL, _uc);
     DONE(ctx);
 }
 
 /** @brief EX de,hl */
 static void _d_exdehl(zda_ctx_t* ctx) {
-    _catstscs(ctx->stmt, zdp_EX, _rpDE, _rpHL, _uc);
+    _catstscs(ctx->stmt, zdp_EX, zdp_DE, zdp_HL, _uc);
     DONE(ctx);
 }
 
@@ -1088,7 +1108,7 @@ static void _d_ldrpnn(zda_ctx_t* ctx) {
 
 /** @brief LD sp,hl */
 static void _d_ldsphl(zda_ctx_t* ctx) {
-    _catstscs(ctx->stmt, zdp_LD, _regSP, _hlixiy(ctx), _uc);
+    _catstscs(ctx->stmt, zdp_LD, zdp_SP, _hlixiy(ctx), _uc);
     DONE(ctx);
 }
 
@@ -1359,13 +1379,165 @@ static void _d_dd2(zda_ctx_t* ctx) {
 
 }
 
+/** @brief Instruction strings for the ED 'increment'/'decrement'/'repeat' operations */
+static cstr const _edoprt[] = {
+    zdp_LDI,
+    zdp_CPI,
+    zdp_INI,
+    zdp_OUTI,
+    zdp_LDD,
+    zdp_CPD,
+    zdp_IND,
+    zdp_OUTD,
+    zdp_LDIR,
+    zdp_CPIR,
+    zdp_INIR,
+    zdp_OTIR,
+    zdp_LDDR,
+    zdp_CPDR,
+    zdp_INDR,
+    zdp_OTDR
+};
 /**
  * Disassemble 'ED' group byte-2
  *
- * (Context assumed valid)
+ * 'ED' group are general extended instructions (not bit, IX, or IY)
  */
 static void _d_ed2(zda_ctx_t* ctx) {
+    // See if it is one of the 'LD' instructions, as those need 2 more bytes
+    uint8_t kbits = ctx->d[1] & 0b11000111; // 'KEY' bits
+    if (kbits == 0b01000011) {
+        // It is one of the 'LD' instructions, so get 2 more bytes
+        ctx->df = _d_edld;
+        NEED(ctx, ZDAn_MR, 2);
+        goto FINALLY_;
+    }
+    // No additional bytes are needed.
+    //
+    // Check for IN, OUT, ADC, SBC
+    //
+    int n;
+    cstr inst = (cstr)NULL;
+    uint8_t r = _regn1(ctx->d[1]); // Get a register incase the instruction uses one
+    if (kbits == 0b01000000) {
+        // IN r,(c)
+        if (r == _regn_cHL) {
+            ERROR(ctx, ZDAE_INVALID_INSTRUCTION); // IN (hl),(c) isn't valid
+        }
+        n = _catstsc(ctx->stmt, zdp_IN, _regstrs[r], _uc);
+        _catinparens(ctx->stmt + n, _regC, _uc);
+        goto DONE_;
+    }
+    if (kbits == 0b01000001) {
+        // OUT (c),r
+        if (r == _regn_cHL) {
+            ERROR(ctx, ZDAE_INVALID_INSTRUCTION); // OUT (c),(hl) isn't valid
+        }
+        n = _catst(ctx->stmt, zdp_OUT, _uc);
+        n += _catinparens(ctx->stmt + n, _regC, _uc);
+        _catcs(ctx->stmt + n, _regstrs[r], _uc);
+        goto DONE_;
+    }
+    if (kbits == 0b01000010) {
+        // ADC hl,rp or SBC hl,rp
+        cstr rp = _rp1(ctx->d[1]);
+        cstr inst = (ctx->d[1] & 0b00001000 ? zdp_ADC : zdp_SBC);
+        _catstscs(ctx->stmt, inst, zdp_HL, rp, _uc);
+        goto DONE_;
+    }
+    //
+    // See if it is LDx, CPx, INx, OUTx, or repeat versions of those
+    //
+    if ((ctx->d[1] & 0b11100000) == 0b10100000) {
+        // Instruction is Ax or Bx which is one of those instructions
+        if (ctx->d[1] & 0b00000100) {
+            ERROR(ctx, ZDAE_INVALID_INSTRUCTION); // Those instructions with bit-2 set are invalid
+        }
+        // Create an index out of the bits
+        uint8_t edi = (((ctx->d[1] & 0b00011000) >> 1) | (ctx->d[1] & 0b00000011));
+        inst = _edoprt[edi];
+        _strcat(ctx->stmt, inst, _uc);
+        goto DONE_;
+    }
+    //
+    // If we get here it is one of the more unique extended instructions
+    //
+    char im[] = {0,0};
+    inst = zdp_LD;  // Set up for 'LD i,a' or 'LD a,i'. Others will load it as needed
+    cstr ldai = "";
+    switch (ctx->d[1]) { // Instructions without additional operators
+        case 0x44:
+            inst = zdp_NEG;
+            break;
+        case 0x45:
+            inst = zdp_RETN;
+            break;
+        case 0x4D:
+            inst = zdp_RETI;
+            break;
+        case 0x67:
+            inst = zdp_RRD;
+            break;
+        case 0x6F:
+            inst = zdp_RLD;
+            break;
+        case 0x46: // IM n [0]
+            im[0] = '0';
+            goto IM_;
+        case 0x56: // IM n [1]
+            im[0] = '1';
+            goto IM_;
+        case 0x5E: // IM n [2]
+            im[0] = '2';
+            goto IM_;
+        case 0x47:
+            ldai = "i,a";
+            break;
+        case 0x57:
+            ldai = "a,i";
+            break;
+        default:
+            ERROR(ctx, ZDAE_INVALID_INSTRUCTION); // Any other opcodes are invalid
+    }
+    _catsts(ctx->stmt, inst, ldai, _uc);
+    goto DONE_;
+IM_:
+    _catsts(ctx->stmt, zdp_IM, im, _uc);
+DONE_:
+    DONE(ctx);
+FINALLY_:
+ERR_:
+    return;
+}
 
+static void _d_edld(zda_ctx_t* ctx) {
+    if (ctx->bi < 4) {
+        NEED(ctx, ZDAn_MR, 1);
+        goto FINALLY_;
+    }
+    // LD (nn),rp
+    // LD rp,(nn)
+    char buf[ZDA_FMT_WORD_BUF_LEN];
+    uint16_t addr = _mkword(ctx->d[3], ctx->d[2]);
+    int n;
+    _fmt_word(buf, addr);
+    // See what we are loading
+    cstr rp = _rp1(ctx->d[1]);
+    n = _catst(ctx->stmt, zdp_LD, _uc);
+    // See if rp is first or second
+    if (ctx->d[1] & 0b00001000) {
+        // rp 1st
+        n = _catsc(ctx->stmt, rp, _uc);
+        _catinparens(ctx->stmt + n, buf, _uc);
+    }
+    else {
+        // rp 2nd
+        n += _catinparens(ctx->stmt + n, buf, _uc);
+        _catcs(ctx->stmt + n, rp, _uc);
+    }
+    DONE(ctx);
+FINALLY_:
+    return;
 }
 
 /**

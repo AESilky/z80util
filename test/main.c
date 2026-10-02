@@ -231,7 +231,31 @@ OPTSEND_:
         printf("\nTwo Byte 'ED' Instructions...\n");
         elements = z2bED_len();
         for (int i = 0; i < elements; i++) {
-            printf("%02X\n", *(z80_2byteED + i));
+            int8_t s = zda_begin(&ctx, addr, *(z80_2byteED + i));
+            if (s == 0) {
+                goto NEXT_E_;
+            }
+            while (s > 0 && ++i < elements) {
+                // feed the disassembler additional bytes
+                // s indicates the minimum needed, but we only feed one at a time
+                addr++; // move to next address
+                s = zda_next(&ctx, *(z80_2byteED + i));
+            }
+            if (s < 0 || i >= elements) {
+                // There was a problem.
+                if (s < 0) {
+                    fprintf(stderr, "Disassembler indicated error: %d %s\n", s, ctx.comment);
+                    goto ERR_RET_;
+                }
+                if (i >= elements) {
+                    fprintf(stderr, "Not enough byte values provided. Need at least %d more.\n", s);
+                    goto ERR_RET_;
+                }
+            }
+        NEXT_E_:
+            // s is 0, list the disassembly
+            _list_inst(&ctx);
+            addr++;
         }
     }
     if (fd) {
