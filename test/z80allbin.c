@@ -154,7 +154,7 @@ static uint8_t const _z80_1byte[] = {
     0x8A,               // ADC  A,D
     0x8B,               // ADC  A,E
     0x8C,               // ADC  A,H
-    0xBD,               // ADC  A,L
+    0x8D,               // ADC  A,L
     0x8E,               // ADC  A,(HL)
     0x8F,               // ADC  A,A
     0x90,               // SUB  B
@@ -528,7 +528,7 @@ uint8_t const _z80_2byteDD[] = {
     0xDD, 0x23,             // INC  IX
     0xDD, 0x29,             // ADD  IX,IX
     0xDD, 0x2A, NNL, NNH,   // LD   IX,(NN)
-    0xDD, 0x28,             // DEC  IX
+    0xDD, 0x2B,             // DEC  IX
     0xDD, 0x34, IND,        // INC  (IX+IND)
     0xDD, 0x35, IND,        // DEC  (IX+IND)
     0xDD, 0x36, IND, N,     // LD   (IX+IND),N
@@ -574,7 +574,7 @@ uint8_t const _z80_2byteDD[] = {
     0xDD, 0xCB, IND, 0x66,  // BIT  4,(IX+IND)
     0xDD, 0xCB, IND, 0x6E,  // BIT  5,(IX+IND)
     0xDD, 0xCB, IND, 0x76,  // BIT  6,(IX+IND)
-    0xDD, 0xDB, IND, 0x7E,  // BIT  7,(IX+IND)
+    0xDD, 0xCB, IND, 0x7E,  // BIT  7,(IX+IND)
     0xDD, 0xCB, IND, 0x86,  // RES  0,(IX+IND)
     0xDD, 0xCB, IND, 0x8E,  // RES  1,(IX+IND)
     0xDD, 0xCB, IND, 0x96,  // RES  2,(IX+IND)
@@ -582,7 +582,7 @@ uint8_t const _z80_2byteDD[] = {
     0xDD, 0xCB, IND, 0xA6,  // RES  4,(IX+IND)
     0xDD, 0xCB, IND, 0xAE,  // RES  5,(IX+IND)
     0xDD, 0xCB, IND, 0xB6,  // RES  6,(IX+IND)
-    0xDD, 0xDB, IND, 0xBE,  // RES  7,(IX+IND)
+    0xDD, 0xCB, IND, 0xBE,  // RES  7,(IX+IND)
     0xDD, 0xCB, IND, 0xC6,  // SET  0,(IX+IND)
     0xDD, 0xCB, IND, 0xCE,  // SET  1,(IX+IND)
     0xDD, 0xCB, IND, 0xD6,  // SET  2,(IX+IND)
@@ -590,7 +590,7 @@ uint8_t const _z80_2byteDD[] = {
     0xDD, 0xCB, IND, 0xE6,  // SET  4,(IX+IND)
     0xDD, 0xCB, IND, 0xEE,  // SET  5,(IX+IND)
     0xDD, 0xCB, IND, 0xF6,  // SET  6,(IX+IND)
-    0xDD, 0xDB, IND, 0xFE,  // SET  7,(IX+IND)
+    0xDD, 0xCB, IND, 0xFE,  // SET  7,(IX+IND)
 };
 
 /*** ===================================================================== ***/
@@ -660,7 +660,7 @@ uint8_t const _z80_2byteFD[] = {
     0XFD, 0x23,             // INC  IY
     0XFD, 0x29,             // ADD  IY,IY
     0XFD, 0x2A, NNL, NNH,   // LD   IY,(NN)
-    0XFD, 0x28,             // DEC  IY
+    0XFD, 0x2B,             // DEC  IY
     0XFD, 0x34, IND,        // INC  (IY+IND)
     0XFD, 0x35, IND,        // DEC  (IY+IND)
     0XFD, 0x36, IND, N,     // LD   (IY+IND),N
@@ -706,7 +706,7 @@ uint8_t const _z80_2byteFD[] = {
     0XFD, 0xCB, IND, 0x66,  // BIT  4,(IY+IND)
     0XFD, 0xCB, IND, 0x6E,  // BIT  5,(IY+IND)
     0XFD, 0xCB, IND, 0x76,  // BIT  6,(IY+IND)
-    0XFD, 0xDB, IND, 0x7E,  // BIT  7,(IY+IND)
+    0XFD, 0xCB, IND, 0x7E,  // BIT  7,(IY+IND)
     0XFD, 0xCB, IND, 0x86,  // RES  0,(IY+IND)
     0XFD, 0xCB, IND, 0x8E,  // RES  1,(IY+IND)
     0XFD, 0xCB, IND, 0x96,  // RES  2,(IY+IND)
@@ -714,7 +714,7 @@ uint8_t const _z80_2byteFD[] = {
     0XFD, 0xCB, IND, 0xA6,  // RES  4,(IY+IND)
     0XFD, 0xCB, IND, 0xAE,  // RES  5,(IY+IND)
     0XFD, 0xCB, IND, 0xB6,  // RES  6,(IY+IND)
-    0XFD, 0xDB, IND, 0xBE,  // RES  7,(IY+IND)
+    0XFD, 0xCB, IND, 0xBE,  // RES  7,(IY+IND)
     0XFD, 0xCB, IND, 0xC6,  // SET  0,(IY+IND)
     0XFD, 0xCB, IND, 0xCE,  // SET  1,(IY+IND)
     0XFD, 0xCB, IND, 0xD6,  // SET  2,(IY+IND)
@@ -722,7 +722,7 @@ uint8_t const _z80_2byteFD[] = {
     0XFD, 0xCB, IND, 0xE6,  // SET  4,(IY+IND)
     0XFD, 0xCB, IND, 0xEE,  // SET  5,(IY+IND)
     0XFD, 0xCB, IND, 0xF6,  // SET  6,(IY+IND)
-    0XFD, 0xDB, IND, 0xFE,  // SET  7,(IY+IND)
+    0XFD, 0xCB, IND, 0xFE,  // SET  7,(IY+IND)
 };
 
 /*** ===================================================================== ***/

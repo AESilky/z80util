@@ -6,10 +6,14 @@
     ],
     "settings": {
         "cSpell.words": [
+            "argi",
+            "ccbits",
             "datest",
             "disasm",
             "dispbyte",
             "hlixiy",
+            "kbits",
+            "ldai",
             "rlca",
             "rrca"
         ],

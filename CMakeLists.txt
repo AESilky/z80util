@@ -30,7 +30,6 @@ project(z80disasm VERSION ${VERSION} LANGUAGES C)
 add_compile_options(
   -Wall
   -Wno-format               # int != int32_t as far as the compiler is concerned
-  -Wno-unused-function
   -Wno-uninitialized
   #-H                       # list include header paths
 )

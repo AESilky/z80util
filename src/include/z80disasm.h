@@ -59,6 +59,23 @@ typedef void (*fmtbyte_t)(char* buf, uint8_t v);
 #define ZDA_FMT_BYTE_BUF_LEN 5
 
 /**
+ * @brief Function prototype for the IX/IY index formatter.
+ * @ingroup z80da
+ * 
+ * A function that matches this signature must be passed to the module init.
+ * It is used to format index (signed 8-bit) values that are displayed with
+ * IX or IY instructions.
+ * 
+ * The formatted result is expected to fit into a five byte buffer including
+ * the '+'/'-' and the NULL terminator.
+ * 
+ * @param buf The character buffer to copy the formatted result into
+ * @param v The INDEX (8 bit signed) value to format
+ */
+typedef void (*fmtindex_t)(char* buf, int8_t v);
+#define ZDA_FMT_INDEX_BUF_LEN 5
+
+/**
  * @brief Function prototype for the WORD formatter.
  * @ingroup z80da
  * 
@@ -89,13 +106,19 @@ typedef void (*df_t)(struct zda_ctx_ *);
  */
 typedef struct zda_ctx_ {
     uint16_t addr;                  // Address of the first byte of the instruction
-    uint8_t bi;                     // Index of expected (next) byte
-    uint8_t d[Z80INST_MAX_BYTES];   // The data of the disassembly
-    int8_t status;                  // The status (same as returned)
-    zda_need_t need;                // The type of data needed
-    df_t df;                        // (internal use)
+    zda_need_t ntype;               // The type of data needed
+    int8_t status;                  // The status (same as value returned from disassemble methods)
     char stmt[Z80INST_BUF_LEN];     // The disassembled statement text
     char comment[Z80CMNT_BUF_LEN];  // Comment for the disassembled statement
+    // The remainder are for internal use
+    uint8_t bi;                     // Index of expected (next) byte (also, count of bytes received)
+    uint8_t d[Z80INST_MAX_BYTES];   // The data for the disassembly
+    int8_t i_ndx;                   // The 'instruction' byte index
+    uint8_t ab;                     // Argument Bytes
+    uint8_t abn;                    // Argument Bytes Needed
+    df_t cf;                        // Continue Function
+    df_t df;                        // Disassemble Function
+    bool xy;                        // IX or IY instruction
 } zda_ctx_t;
 
 /**
@@ -119,7 +142,7 @@ typedef struct zda_ctx_ {
  *  <0: The data provided is invalid for the disassembly
  *      This should only occur on a call to `zda_next`.
  * 
- * If more data is needed the context `need` field will indicate what type of
+ * If more data is needed the context `ntype` field will indicate what type of
  * data is needed (an instruction fetch or a data byte). This is provided as
  * information in the case that the caller knowns how the data was collected
  * (for example, out of history data that also recorded the control signals).
@@ -135,7 +158,7 @@ typedef struct zda_ctx_ {
 extern int8_t zda_begin(zda_ctx_t* ctx, uint16_t addr, uint8_t data);
 
 /**
- * @brief Do the next disassemble operation.
+ * @brief Provide the next byte for the disassemble operation.
  * @ingroup z80da
  * 
  * This continues a disassembly that was started using `zda_begin`, when more than
@@ -175,15 +198,24 @@ extern void zda_invalid(zda_ctx_t* ctx);
  */
 extern void zda_unknown(zda_ctx_t* ctx);
 
+typedef enum MODINIT_STATUS_ {
+    MI_SUCCESS = 0,
+    MI_NEED_BYTE_FORMATTER,
+    MI_NEED_WORD_FORMATTER,
+    MI_NEED_INDEX_FORMATTER
+} modinit_status_t;
 /**
  * @brief Initialize the module.
  * @ingroup z80da
+ *
+ * This must be called to initialize the module for disassembly operations.
  * 
- * This should be called to initialize the module for disassembly operations.
- * 
- * @param upper_case `true` for upper case disassembly, `false` for lower case. 
- * @return int 0:Success
+ * @param byte_formatter Function that formats an 8-bit byte value to a string into a buffer
+ * @param word_formatter Function that formats a 16-bit word value to a string into a buffer
+ * @param index_formatter Function that formats a signed 8-bit value into a string with a leading '+'/'-'
+ * @param upper_case `true` for upper case disassembly, `false` for lower case.
+ * @return modinit_status_t 
  */
-extern int zda_modinit(fmtbyte_t byte_formatter, fmtword_t word_formatter, bool upper_case);
+extern modinit_status_t zda_modinit(fmtbyte_t byte_formatter, fmtword_t word_formatter, fmtindex_t index_formatter, bool upper_case);
 
 #endif // Z80DISASM_H_

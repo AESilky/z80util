@@ -18,12 +18,16 @@
  * SPDX-License-Identifier: MIT License
  */
 #include "z80disasm.h"  // The Disassembler methods
-#include "z80allbin.h"  // add instructions binary data
+#include "z80allbin.h"  // All instructions binary data
 
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int line = 1;               // Used for listing output
+
+static void _usage(const char* name);
 
 static void _fmt_byte(char* buf, uint8_t v) {
     sprintf(buf, "%02x", v);
@@ -33,23 +37,34 @@ static void _fmt_byteh(char* buf, uint8_t v) {
     sprintf(buf, "%02xh", v);
 }
 
+static void _fmt_index(char* buf, int8_t i) {
+    sprintf(buf, "%+i", i);
+}
+
 static void _fmt_word(char* buf, uint16_t v) {
     sprintf(buf, "%04x", v);
 }
 
-unsigned int uint_from_hexstr(const char* str, bool* success) {
-    char* unparsed;
-    *success = true; // Be an optimist
-    unsigned long retval = strtoul(str, &unparsed, 16);
-    if (*unparsed) {
-        retval = 0;
-        *success = false;
+static void _hndl_disassemble_err(zda_ctx_t* ctx) {
+    int s = ctx->status;
+    if (s < 0) {
+        fprintf(stderr, "Disassembler indicated error: %d %s\n", s, ctx->comment);
+        if (s == ZDAE_INVALID_INSTRUCTION) {
+            // For invalid instruction, print the bytes given to the disassembler
+            fprintf(stderr, " Invalid Instruction: %04X ", ctx->addr);
+            for (int i = 0; i < ctx->bi; i++) {
+                char* comma = (ctx->bi - i > 1 ? "," : "");
+                fprintf(stderr, "%02X%s", ctx->d[i], comma);
+            }
+            fprintf(stderr, "\n");
+        }
     }
-    return (retval);
+    else {
+        fprintf(stderr, "Not enough byte values provided. Need at least %d more.\n", s);
+    }
 }
 
 static void _list_inst(zda_ctx_t* ctx) {
-    static int line = 1;               // Used for listing output
     char buf[3];
     char *comment = (*(ctx->comment) ? "\t\t; " : "");
     printf("%4d %04X ", line++, ctx->addr);
@@ -64,6 +79,22 @@ static void _list_inst(zda_ctx_t* ctx) {
     printf("%s%s%s\n", ctx->stmt, comment, ctx->comment);
 }
 
+static void _opt_err(const char* name) {
+    fprintf(stderr, "Invalid option.\n");
+    _usage(name);
+}
+
+static unsigned int _uint_from_hexstr(const char* str, bool* success) {
+    char* unparsed;
+    *success = true; // Be an optimist
+    unsigned long retval = strtoul(str, &unparsed, 16);
+    if (*unparsed) {
+        retval = 0;
+        *success = false;
+    }
+    return (retval);
+}
+
 static void _usage(const char* name) {
     printf("usage: %s [(-h|--help)|(X nn nn ...)|[1][C][D][E][F][I]]\n", name);
     printf(" 1 : 1-Byte instructions\n");
@@ -76,11 +107,6 @@ static void _usage(const char* name) {
     printf(" -u or --upper : Uppercase disassembly output (must be before 'X' if used)\n");
     printf(" -h or --help : Print this.\n");
     printf(" If no parameters are specified all instruction groups including invalid are used.\n");
-}
-
-static void _opt_err(const char* name) {
-    fprintf(stderr, "Invalid option.\n");
-    _usage(name);
 }
 
 int main(int argc, char** argv){
@@ -135,6 +161,7 @@ int main(int argc, char** argv){
                         uc = true;
                         // skip to next arg;
                         while(*opts) opts++;
+                        b1 = cb = dd = ed = fd = ig = (argc > 0 ? false : true);
                         continue;
                     }
                     // check for "-h" or "--help"
@@ -153,7 +180,7 @@ int main(int argc, char** argv){
     }
 OPTSEND_:
     // Initialize the Disassembler
-    ds = zda_modinit(_fmt_byteh, _fmt_word, uc);
+    ds = zda_modinit(_fmt_byteh, _fmt_word, _fmt_index, uc);
     if (ds != 0) {
         fprintf(stderr, "Disassembler init error: %s\n", ds);
         goto ERR_RET_;
@@ -205,14 +232,8 @@ OPTSEND_:
             }
             if (s < 0 || i >= elements) {
                 // There was a problem.
-                if (s < 0) {
-                    fprintf(stderr, "Disassembler indicated error: %d %s\n", s, ctx.comment);
-                    goto ERR_RET_;
-                }
-                if (i >= elements) {
-                    fprintf(stderr, "Not enough byte values provided. Need at least %d more.\n", s);
-                    goto ERR_RET_;
-                }
+                _hndl_disassemble_err(&ctx);
+                goto ERR_RET_;
             }
         NEXT_C_:
             // s is 0, list the disassembly
@@ -224,7 +245,25 @@ OPTSEND_:
         printf("\nTwo Byte 'DD' Instructions...\n");
         elements = z2bDD_len();
         for (int i = 0; i < elements; i++) {
-            printf("%02X\n", *(z80_2byteDD + i));
+            int8_t s = zda_begin(&ctx, addr, *(z80_2byteDD + i));
+            if (s == 0) {
+                goto NEXT_D_;
+            }
+            while (s > 0 && ++i < elements) {
+                // feed the disassembler additional bytes
+                // s indicates the minimum needed, but we only feed one at a time
+                addr++; // move to next address
+                s = zda_next(&ctx, *(z80_2byteDD + i));
+            }
+            if (s < 0 || i >= elements) {
+                // There was a problem.
+                _hndl_disassemble_err(&ctx);
+                goto ERR_RET_;
+            }
+        NEXT_D_:
+            // s is 0, list the disassembly
+            _list_inst(&ctx);
+            addr++;
         }
     }
     if (ed) {
@@ -243,14 +282,8 @@ OPTSEND_:
             }
             if (s < 0 || i >= elements) {
                 // There was a problem.
-                if (s < 0) {
-                    fprintf(stderr, "Disassembler indicated error: %d %s\n", s, ctx.comment);
-                    goto ERR_RET_;
-                }
-                if (i >= elements) {
-                    fprintf(stderr, "Not enough byte values provided. Need at least %d more.\n", s);
-                    goto ERR_RET_;
-                }
+                _hndl_disassemble_err(&ctx);
+                goto ERR_RET_;
             }
         NEXT_E_:
             // s is 0, list the disassembly
@@ -262,14 +295,68 @@ OPTSEND_:
         printf("\nTwo Byte 'FD' Instructions...\n");
         elements = z2bFD_len();
         for (int i = 0; i < elements; i++) {
-            printf("%02X\n", *(z80_2byteFD + i));
+            int8_t s = zda_begin(&ctx, addr, *(z80_2byteFD + i));
+            if (s == 0) {
+                goto NEXT_F_;
+            }
+            while (s > 0 && ++i < elements) {
+                // feed the disassembler additional bytes
+                // s indicates the minimum needed, but we only feed one at a time
+                addr++; // move to next address
+                s = zda_next(&ctx, *(z80_2byteFD + i));
+            }
+            if (s < 0 || i >= elements) {
+                // There was a problem.
+                _hndl_disassemble_err(&ctx);
+                goto ERR_RET_;
+            }
+        NEXT_F_:
+            // s is 0, list the disassembly
+            _list_inst(&ctx);
+            addr++;
         }
     }
     if (ig) {
         printf("\nInvalid Instructions...\n");
         elements = zInvalid_len();
         for (int i = 0; i < elements; i++) {
-            printf("%02X\n", *(z80_invalid + i));
+            int8_t s = zda_begin(&ctx, addr, *(z80_invalid + i));
+            if (s == 0) {
+                goto NEXT_I_;
+            }
+            while (s > 0 && ++i < elements) {
+                // feed the disassembler additional bytes
+                // s indicates the minimum needed, but we only feed one at a time
+                addr++; // move to next address
+                s = zda_next(&ctx, *(z80_invalid + i));
+            }
+            if (s == ZDAE_INVALID_INSTRUCTION) {
+                // This is what we expect
+                char buf[3];
+                zda_invalid(&ctx);
+                char* comment = (*(ctx.comment) ? "\t\t; " : "");
+                printf("%4d %04X ", line++, ctx.addr);
+                for (int j = 0; j < Z80INST_MAX_BYTES; j++) {
+                    const char* db = "  ";
+                    if (j < ctx.bi) {
+                        _fmt_byte(buf, ctx.d[j]);
+                        db = buf;
+                    }
+                    printf("%s ", db);
+                }
+                printf("%s%s%s\n", ctx.stmt, comment, ctx.comment);
+            }
+            else {
+                // There was a problem.
+                fprintf(stderr, "Disassembler did not report invalid instruction for: ");
+                for (int k = 0; k < ctx.bi; k++) {
+                    fprintf(stderr, "%02X ", ctx.d[k]);
+                }
+                fprintf(stderr, "\n");
+                goto ERR_RET_;
+            }
+        NEXT_I_:
+            addr++;
         }
     }
     if (xb) {
@@ -278,7 +365,7 @@ OPTSEND_:
         // First, run through them all to make sure they are valid
         for (int i = 0; i < argc; i++) {
             bool success;
-            unsigned int b = uint_from_hexstr(*(argv + i), &success);
+            unsigned int b = _uint_from_hexstr(*(argv + i), &success);
             if (!success || b > 255) {
                 fprintf(stderr, "The argument '%s' is not a valid hex byte\n", *argv);
                 goto ERR_RET_;
@@ -287,7 +374,7 @@ OPTSEND_:
         // Okay, they are all valid hex bytes. Start calling the disassemble.
         for (int i = 0; i < argc; i++) {
             bool success;
-            unsigned int b = uint_from_hexstr(*(argv + i), &success);
+            unsigned int b = _uint_from_hexstr(*(argv + i), &success);
             // no need to check success - all arguments were checked above
             int8_t s = zda_begin(&ctx, addr, b);
             if (s == 0) {
@@ -297,19 +384,13 @@ OPTSEND_:
                 // feed the disassembler additional bytes
                 // s indicates the minimum needed, but we only feed one at a time
                 addr++; // move to next address
-                b = uint_from_hexstr(*(argv + i), &success);
+                b = _uint_from_hexstr(*(argv + i), &success);
                 s = zda_next(&ctx, b);
             }
             if (s < 0 || i >= argc) {
                 // There was a problem.
-                if (s < 0) {
-                    fprintf(stderr, "Disassembler indicated error: %d\n", s);
-                    goto ERR_RET_;
-                }
-                if (i >= argc) {
-                    fprintf(stderr, "Not enough byte values provided. Need at least %d more.\n", s);
-                    goto ERR_RET_;
-                }
+                _hndl_disassemble_err(&ctx);
+                goto ERR_RET_;
             }
         NEXT_X_:
             // s is 0, list the disassembly
