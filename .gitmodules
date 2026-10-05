@@ -1,3 +1,0 @@
-[submodule "src/lib/shell"]
-	path = src/lib/shell
-	url = git@github.com:AESilky/sl-pshell.git
