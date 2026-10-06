@@ -10,5 +10,5 @@ target_include_directories(z80datest PUBLIC
 )
 
 target_link_libraries(z80datest PUBLIC
-    z80dis
+    z80dasm
 )
