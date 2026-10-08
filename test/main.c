@@ -180,7 +180,7 @@ int main(int argc, char** argv){
     }
 OPTSEND_:
     // Initialize the Disassembler
-    ds = zda_modinit(_fmt_byteh, _fmt_word, _fmt_index, uc);
+    ds = zda_modinit(_fmt_byteh, _fmt_word, _fmt_index);
     if (ds != 0) {
         fprintf(stderr, "Disassembler init error: %s\n", ds);
         goto ERR_RET_;
@@ -189,7 +189,7 @@ OPTSEND_:
         printf("Single Byte Instructions...\n");
         elements = z1b_len();
         for (int i = 0; i < elements; i++) {
-            int8_t s = zda_begin(&ctx, addr, *(z80_1byte + i));
+            int8_t s = zda_begin(&ctx, addr, *(z80_1byte + i), uc);
             if (s == 0) {
                 goto NEXT_1_;
             }
@@ -220,7 +220,7 @@ OPTSEND_:
         printf("\nTwo Byte 'CB' Instructions...\n");
         elements = z2bCB_len();
         for (int i = 0; i < elements; i++) {
-            int8_t s = zda_begin(&ctx, addr, *(z80_2byteCB + i));
+            int8_t s = zda_begin(&ctx, addr, *(z80_2byteCB + i), uc);
             if (s == 0) {
                 goto NEXT_C_;
             }
@@ -245,7 +245,7 @@ OPTSEND_:
         printf("\nTwo Byte 'DD' Instructions...\n");
         elements = z2bDD_len();
         for (int i = 0; i < elements; i++) {
-            int8_t s = zda_begin(&ctx, addr, *(z80_2byteDD + i));
+            int8_t s = zda_begin(&ctx, addr, *(z80_2byteDD + i), uc);
             if (s == 0) {
                 goto NEXT_D_;
             }
@@ -270,7 +270,7 @@ OPTSEND_:
         printf("\nTwo Byte 'ED' Instructions...\n");
         elements = z2bED_len();
         for (int i = 0; i < elements; i++) {
-            int8_t s = zda_begin(&ctx, addr, *(z80_2byteED + i));
+            int8_t s = zda_begin(&ctx, addr, *(z80_2byteED + i), uc);
             if (s == 0) {
                 goto NEXT_E_;
             }
@@ -295,7 +295,7 @@ OPTSEND_:
         printf("\nTwo Byte 'FD' Instructions...\n");
         elements = z2bFD_len();
         for (int i = 0; i < elements; i++) {
-            int8_t s = zda_begin(&ctx, addr, *(z80_2byteFD + i));
+            int8_t s = zda_begin(&ctx, addr, *(z80_2byteFD + i), uc);
             if (s == 0) {
                 goto NEXT_F_;
             }
@@ -320,7 +320,7 @@ OPTSEND_:
         printf("\nInvalid Instructions...\n");
         elements = zInvalid_len();
         for (int i = 0; i < elements; i++) {
-            int8_t s = zda_begin(&ctx, addr, *(z80_invalid + i));
+            int8_t s = zda_begin(&ctx, addr, *(z80_invalid + i), uc);
             if (s == 0) {
                 goto NEXT_I_;
             }
@@ -376,7 +376,7 @@ OPTSEND_:
             bool success;
             unsigned int b = _uint_from_hexstr(*(argv + i), &success);
             // no need to check success - all arguments were checked above
-            int8_t s = zda_begin(&ctx, addr, b);
+            int8_t s = zda_begin(&ctx, addr, b, uc);
             if (s == 0) {
                 goto NEXT_X_;
             }
